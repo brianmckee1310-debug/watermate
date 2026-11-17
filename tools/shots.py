@@ -1,0 +1,55 @@
+import sys, subprocess, time
+from playwright.sync_api import sync_playwright
+out = sys.argv[1]
+srv = subprocess.Popen(["python3", "-m", "http.server", "4173", "-d", "docs"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(1)
+errs = []
+try:
+    with sync_playwright() as p:
+        b = p.chromium.launch(executable_path="/usr/bin/google-chrome")
+        ctx = b.new_context(viewport={"width": 412, "height": 883}, device_scale_factor=2, has_touch=True, is_mobile=True)
+        pg = ctx.new_page()
+        pg.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg.goto("http://localhost:4173/"); pg.wait_for_timeout(900)
+        def shot(n, full=False): pg.wait_for_timeout(700); pg.screenshot(path=f"{out}/{n}.png", full_page=full)
+        shot("01-today-first")
+        # water one, push one
+        pg.locator(".card .btn.blue").first.click(); pg.wait_for_timeout(260); pg.screenshot(path=f"{out}/02-wet-mid.png"); pg.wait_for_timeout(900)
+        pg.locator(".card .btn.cream").first.click(); shot("03-push-row")
+        pg.locator(".push-row .btn").nth(1).click(); pg.wait_for_timeout(900); shot("04-after-push")
+        pg.locator(".nav-btn").nth(1).click(); shot("05-home"); shot("05b-home-full", True)
+        pg.locator(".room").first.click(); shot("06-unplaced-room")
+        pg.locator(".shelf-item").first.click(); shot("07-thing-sheet")
+        pg.locator(".sheet-body").evaluate("e => e.scrollTo(0, 99999)"); shot("07b-thing-sheet-bottom")
+        pg.locator(".sheet .icon-btn").first.click(); pg.wait_for_timeout(400)
+        pg.locator(".roomview .float.left").click(); pg.wait_for_timeout(300)
+        # living room: move things in
+        pg.locator(".room", has_text="Living room").click(); pg.wait_for_timeout(400)
+        pg.locator(".btn", has_text="Move things here").click(); pg.wait_for_timeout(400)
+        for i in range(5): pg.locator(".pick-grid button").nth(i).click()
+        shot("08-move")
+        pg.locator(".sticky .btn").click(); shot("09-living-room")
+        pg.locator(".roomview .float.right").click(); shot("10-room-settings")
+        pg.locator(".sheet .icon-btn").first.click(); pg.wait_for_timeout(400)
+        pg.locator(".fab").click(); shot("11-add")
+        pg.locator(".search").fill("monst"); shot("12-add-search")
+        pg.locator(".result").first.click(); pg.wait_for_timeout(300)
+        pg.locator(".seg button").nth(1).click(); shot("13-add-animal")
+        pg.locator(".sheet .icon-btn").first.click(); pg.wait_for_timeout(400)
+        pg.locator(".nav-btn").nth(1).click(); shot("14-home-after", True)
+        pg.locator(".room", has_text="Chicken coop").click(); shot("14b-coop")
+        pg.locator(".nav-btn").nth(2).click(); shot("15-plan", True)
+        pg.locator(".nav-btn").nth(3).click(); shot("16-settings", True)
+        pg.locator(".nav-btn").nth(0).click(); pg.wait_for_timeout(300)
+        pg.locator(".btn", has_text="Did everything").click(); shot("17-all-done")
+        pg.locator(".nav-btn").nth(2).click(); shot("18-plan-after", True)
+        # persistence
+        pg.reload(); pg.wait_for_timeout(600)
+        print("after reload h1:", pg.locator("h1").first.inner_text())
+        print("things:", pg.evaluate("JSON.parse(localStorage.getItem('watermate.v1')).things.length"))
+        print("overflow-x:", pg.evaluate("document.documentElement.scrollWidth > innerWidth"))
+        b.close()
+finally:
+    srv.terminate()
+print("errors:", errs)
